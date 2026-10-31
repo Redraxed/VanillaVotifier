@@ -141,6 +141,8 @@ public class VotifierServer {
 									}
 								} catch (SocketTimeoutException e) {
 									notifyListeners(new ReadTimedOutExceptionEvent(socket, e));
+								} catch (java.net.SocketException e) {
+									notifyListeners(new CommunicationExceptionEvent(socket, e));
 								} catch (BadPaddingException e) {
 									notifyListeners(new DecryptInputExceptionEvent(socket, e));
 								} catch (Exception e) {
