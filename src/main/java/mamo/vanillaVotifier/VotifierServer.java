@@ -78,7 +78,7 @@ public class VotifierServer {
 									notifyListeners(new ConnectionEstablishedEvent(socket));
 									socket.setSoTimeout(SocketOptions.SO_TIMEOUT); // SocketException: handled by try/catch.
 									BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
-									writer.write("VOTIFIER 2.9\n");
+									writer.write("VOTIFIER 1\n");
 									writer.flush();
 									BufferedInputStream in = new BufferedInputStream(socket.getInputStream()); // IOException: handled by try/catch.
 									byte[] request = new byte[((RSAPublicKey) votifier.getConfig().getKeyPair().getPublic()).getModulus().bitLength() / Byte.SIZE];
