@@ -113,7 +113,6 @@
                                         <exclude>META-INF/*.RSA</exclude>
                                         <exclude>META-INF/LICENSE*</exclude>
                                         <exclude>META-INF/NOTICE*</exclude>
-                                        <exclude>META-INF/MANIFEST.MF</exclude>
                                         <exclude>META-INF/versions/**</exclude>
                                     </excludes>
                                 </filter>
