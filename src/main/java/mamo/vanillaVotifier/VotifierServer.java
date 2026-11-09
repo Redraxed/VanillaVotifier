@@ -44,180 +44,180 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.PatternSyntaxException;
 
 public class VotifierServer {
-    @NotNull protected VanillaVotifier votifier;
-    @NotNull protected CopyOnWriteArrayList<Listener> listeners;
-    protected boolean running;
-    @Nullable protected ServerSocket serverSocket;
+	@NotNull protected VanillaVotifier votifier;
+	@NotNull protected CopyOnWriteArrayList<Listener> listeners;
+	protected boolean running;
+	@Nullable protected ServerSocket serverSocket;
 
-    public VotifierServer(@NotNull VanillaVotifier votifier) {
-        this.votifier = votifier;
-        listeners = new CopyOnWriteArrayList<Listener>();
-        listeners.add(new VotifierServerListener(votifier));
-    }
+	public VotifierServer(@NotNull VanillaVotifier votifier) {
+		this.votifier = votifier;
+		listeners = new CopyOnWriteArrayList<Listener>();
+		listeners.add(new VotifierServerListener(votifier));
+	}
 
-    public synchronized void start() throws IOException {
-        if (isRunning()) {
-            throw new IllegalStateException("Server is already running!");
-        }
-        notifyListeners(new ServerStartingEvent());
-        serverSocket = new ServerSocket();
-        serverSocket.bind(votifier.getConfig().getInetSocketAddress());
-        running = true;
-        notifyListeners(new ServerStartedEvent());
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                ExecutorService executorService = Executors.newSingleThreadExecutor();
-                while (isRunning()) {
-                    try {
-                        final Socket socket = serverSocket.accept();
-                        executorService.execute(new Runnable() {
-                            @Override
-                            public void run() {
-                                boolean handshakeCompleted = false;
-                                try {
-                                    notifyListeners(new ConnectionEstablishedEvent(socket));
-                                    socket.setSoTimeout(SocketOptions.SO_TIMEOUT);
-                                    
-                                    // 1. Send greeting
-                                    try {
-                                        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
-                                        writer.write("VOTIFIER 1\n");
-                                        writer.flush();
-                                        handshakeCompleted = true;
-                                    } catch (java.net.SocketException e) {
-                                        // Client disconnected immediately during greeting (e.g., port scanner).
-                                        return;
-                                    }
+	public synchronized void start() throws IOException {
+		if (isRunning()) {
+			throw new IllegalStateException("Server is already running!");
+		}
+		notifyListeners(new ServerStartingEvent());
+		serverSocket = new ServerSocket();
+		serverSocket.bind(votifier.getConfig().getInetSocketAddress());
+		running = true;
+		notifyListeners(new ServerStartedEvent());
+		new Thread(new Runnable() {
+			@Override
+			public void run() {
+				ExecutorService executorService = Executors.newSingleThreadExecutor();
+				while (isRunning()) {
+					try {
+						final Socket socket = serverSocket.accept();
+						executorService.execute(new Runnable() {
+							@Override
+							public void run() {
+								boolean handshakeCompleted = false;
+								try {
+									notifyListeners(new ConnectionEstablishedEvent(socket));
+									socket.setSoTimeout(SocketOptions.SO_TIMEOUT);
+									
+									// 1. Send greeting
+									try {
+										BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
+										writer.write("VOTIFIER 1\n");
+										writer.flush();
+										handshakeCompleted = true;
+									} catch (java.net.SocketException e) {
+										// Client disconnected immediately during greeting (e.g., port scanner).
+										return;
+									}
 
-                                    // 2. Read and process vote if handshake completed successfully
-                                    if (handshakeCompleted) {
-                                        try {
-                                            BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
-                                            byte[] request = new byte[((RSAPublicKey) votifier.getConfig().getKeyPair().getPublic()).getModulus().bitLength() / Byte.SIZE];
-                                            int bytesRead = in.read(request);
-                                            if (bytesRead == -1) {
-                                                return; // Client closed connection cleanly
-                                            }
-                                            
-                                            notifyListeners(new EncryptedInputReceivedEvent(socket, new String(request)));
-                                            request = RsaUtils.getDecryptCipher(votifier.getConfig().getKeyPair().getPrivate()).doFinal(request);
-                                            String requestString = new String(request);
-                                            notifyListeners(new DecryptedInputReceivedEvent(socket, requestString));
-                                            String[] requestArray = requestString.split("\n");
-                                            
-                                            if ((requestArray.length == 5 || requestArray.length == 6) && requestArray[0].equals("VOTE")) {
-                                                notifyListeners(new VoteEventVotifier(socket, new Vote(requestArray[1], requestArray[2], requestArray[3], requestArray[4])));
-                                                for (VoteAction voteAction : votifier.getConfig().getVoteActions()) {
-                                                    String[] params = new String[4];
-                                                    try {
-                                                        for (int i = 0; i < params.length; i++) {
-                                                            params[i] = SubstitutionUtils.applyRegexReplacements(requestArray[i + 1], voteAction.getRegexReplacements());
-                                                        }
-                                                    } catch (PatternSyntaxException e) {
-                                                        notifyListeners(new RegularExpressionPatternErrorException(e));
-                                                        params = new String[]{requestArray[1], requestArray[2], requestArray[3], requestArray[4]};
-                                                    }
-                                                    if (voteAction.getCommandSender() instanceof RconCommandSender) {
-                                                        RconCommandSender commandSender = (RconCommandSender) voteAction.getCommandSender();
-                                                        StringSubstitutor substitutor = SubstitutionUtils.buildStrSubstitutor(
-                                                                new SimpleEntry<String, Object>("service-name", params[0]),
-                                                                new SimpleEntry<String, Object>("user-name", params[1]),
-                                                                new SimpleEntry<String, Object>("address", params[2]),
-                                                                new SimpleEntry<String, Object>("timestamp", params[3])
-                                                        );
-                                                        for (String command : voteAction.getCommands()) {
-                                                            String theCommand = substitutor.replace(command);
-                                                            notifyListeners(new SendingRconCommandEvent(commandSender.getRconConnection(), theCommand));
-                                                            try {
-                                                                notifyListeners(new RconCommandResponseEvent(commandSender.getRconConnection(), commandSender.sendCommand(theCommand).getPayload()));
-                                                            } catch (Exception e) {
-                                                                notifyListeners(new RconExceptionEvent(commandSender.getRconConnection(), e));
-                                                            }
-                                                        }
-                                                    }
-                                                    if (voteAction.getCommandSender() instanceof ShellCommandSender) {
-                                                        ShellCommandSender commandSender = (ShellCommandSender) voteAction.getCommandSender();
-                                                        HashMap<String, String> environment = new HashMap<String, String>();
-                                                        environment.put("voteServiceName", params[0]);
-                                                        environment.put("voteUserName", params[1]);
-                                                        environment.put("voteAddress", params[2]);
-                                                        environment.put("voteTimestamp", params[3]);
-                                                        for (String command : voteAction.getCommands()) {
-                                                            notifyListeners(new SendingShellCommandEvent(command));
-                                                            try {
-                                                                commandSender.sendCommand(command, environment);
-                                                                notifyListeners(new ShellCommandSentEvent());
-                                                            } catch (Exception e) {
-                                                                notifyListeners(new ShellCommandExceptionEvent(e));
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            } else {
-                                                notifyListeners(new InvalidRequestEvent(socket, requestString));
-                                            }
-                                        } catch (java.net.SocketException e) {
-                                            // Silently absorb mid-stream connection resets from bots or scanners
-                                            return;
-                                        }
-                                    }
-                                } catch (SocketTimeoutException e) {
-                                    notifyListeners(new ReadTimedOutExceptionEvent(socket, e));
-                                } catch (BadPaddingException e) {
-                                    notifyListeners(new DecryptInputExceptionEvent(socket, e));
-                                } catch (Exception e) {
-                                    notifyListeners(new CommunicationExceptionEvent(socket, e));
-                                }
-                                try {
-                                    socket.close();
-                                    notifyListeners(new ConnectionClosedEvent(socket));
-                                } catch (Exception e) { // IOException: catching just in case. Continue even if socket doesn't close.
-                                    notifyListeners(new ConnectionCloseExceptionEvent(socket, e));
-                                }
-                            }
-                        });
-                    } catch (Exception e) {
-                        if (running) { // Show errors only while running, to hide error while stopping.
-                            notifyListeners(new ConnectionEstablishExceptionEvent(e));
-                        }
-                    }
-                }
-                executorService.shutdown();
-                if (!executorService.isTerminated()) {
-                    notifyListeners(new ServerAwaitingTaskCompletionEvent());
-                    try {
-                        executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
-                    } catch (Exception e) {
-                        // InterruptedException: can't happen.
-                    }
-                }
-                notifyListeners(new ServerStoppedEvent());
-            }
-        }).start();
-    }
+									// 2. Read and process vote if handshake completed successfully
+									if (handshakeCompleted) {
+										try {
+											BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
+											byte[] request = new byte[((RSAPublicKey) votifier.getConfig().getKeyPair().getPublic()).getModulus().bitLength() / Byte.SIZE];
+											int bytesRead = in.read(request);
+											if (bytesRead == -1) {
+												return; // Client closed connection cleanly
+											}
+											
+											notifyListeners(new EncryptedInputReceivedEvent(socket, new String(request)));
+											request = RsaUtils.getDecryptCipher(votifier.getConfig().getKeyPair().getPrivate()).doFinal(request);
+											String requestString = new String(request);
+											notifyListeners(new DecryptedInputReceivedEvent(socket, requestString));
+											String[] requestArray = requestString.split("\n");
+											
+											if ((requestArray.length == 5 || requestArray.length == 6) && requestArray[0].equals("VOTE")) {
+												notifyListeners(new VoteEventVotifier(socket, new Vote(requestArray[1], requestArray[2], requestArray[3], requestArray[4])));
+												for (VoteAction voteAction : votifier.getConfig().getVoteActions()) {
+													String[] params = new String[4];
+													try {
+														for (int i = 0; i < params.length; i++) {
+															params[i] = SubstitutionUtils.applyRegexReplacements(requestArray[i + 1], voteAction.getRegexReplacements());
+														}
+													} catch (PatternSyntaxException e) {
+														notifyListeners(new RegularExpressionPatternErrorException(e));
+														params = new String[]{requestArray[1], requestArray[2], requestArray[3], requestArray[4]};
+													}
+													if (voteAction.getCommandSender() instanceof RconCommandSender) {
+														RconCommandSender commandSender = (RconCommandSender) voteAction.getCommandSender();
+														StringSubstitutor substitutor = SubstitutionUtils.buildStrSubstitutor(
+																new SimpleEntry<String, Object>("service-name", params[0]),
+																new SimpleEntry<String, Object>("user-name", params[1]),
+																new SimpleEntry<String, Object>("address", params[2]),
+																new SimpleEntry<String, Object>("timestamp", params[3])
+														);
+														for (String command : voteAction.getCommands()) {
+															String theCommand = substitutor.replace(command);
+															notifyListeners(new SendingRconCommandEvent(commandSender.getRconConnection(), theCommand));
+															try {
+																notifyListeners(new RconCommandResponseEvent(commandSender.getRconConnection(), commandSender.sendCommand(theCommand).getPayload()));
+															} catch (Exception e) {
+																notifyListeners(new RconExceptionEvent(commandSender.getRconConnection(), e));
+															}
+														}
+													}
+													if (voteAction.getCommandSender() instanceof ShellCommandSender) {
+														ShellCommandSender commandSender = (ShellCommandSender) voteAction.getCommandSender();
+														HashMap<String, String> environment = new HashMap<String, String>();
+														environment.put("voteServiceName", params[0]);
+														environment.put("voteUserName", params[1]);
+														environment.put("voteAddress", params[2]);
+														environment.put("voteTimestamp", params[3]);
+														for (String command : voteAction.getCommands()) {
+															notifyListeners(new SendingShellCommandEvent(command));
+															try {
+																commandSender.sendCommand(command, environment);
+																notifyListeners(new ShellCommandSentEvent());
+															} catch (Exception e) {
+																notifyListeners(new ShellCommandExceptionEvent(e));
+															}
+														}
+													}
+												}
+											} else {
+												notifyListeners(new InvalidRequestEvent(socket, requestString));
+											}
+										} catch (java.net.SocketException e) {
+											// Silently absorb mid-stream connection resets from bots or scanners
+											return;
+										}
+									}
+								} catch (SocketTimeoutException e) {
+									notifyListeners(new ReadTimedOutExceptionEvent(socket, e));
+								} catch (BadPaddingException e) {
+									notifyListeners(new DecryptInputExceptionEvent(socket, e));
+								} catch (Exception e) {
+									notifyListeners(new CommunicationExceptionEvent(socket, e));
+								}
+								try {
+									socket.close();
+									notifyListeners(new ConnectionClosedEvent(socket));
+								} catch (Exception e) { // IOException: catching just in case. Continue even if socket doesn't close.
+									notifyListeners(new ConnectionCloseExceptionEvent(socket, e));
+								}
+							}
+						});
+					} catch (Exception e) {
+						if (running) { // Show errors only while running, to hide error while stopping.
+							notifyListeners(new ConnectionEstablishExceptionEvent(e));
+						}
+					}
+				}
+				executorService.shutdown();
+				if (!executorService.isTerminated()) {
+					notifyListeners(new ServerAwaitingTaskCompletionEvent());
+					try {
+						executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
+					} catch (Exception e) {
+						// InterruptedException: can't happen.
+					}
+				}
+				notifyListeners(new ServerStoppedEvent());
+			}
+		}).start();
+	}
 
-    public synchronized void stop() throws IOException {
-        if (!isRunning()) {
-            throw new IllegalStateException("Server isn't running!");
-        }
-        notifyListeners(new ServerStoppingEvent());
-        running = false;
-        serverSocket.close();
-    }
+	public synchronized void stop() throws IOException {
+		if (!isRunning()) {
+			throw new IllegalStateException("Server isn't running!");
+		}
+		notifyListeners(new ServerStoppingEvent());
+		running = false;
+		serverSocket.close();
+	}
 
-    public synchronized boolean isRunning() {
-        return running;
-    }
+	public synchronized boolean isRunning() {
+		return running;
+	}
 
-    @NotNull
-    public List<Listener> getListeners() {
-        return listeners;
-    }
+	@NotNull
+	public List<Listener> getListeners() {
+		return listeners;
+	}
 
-    public void notifyListeners(@NotNull Event event) {
-        for (Listener listener : listeners) {
-            listener.onEvent(event);
-        }
-    }
+	public void notifyListeners(@NotNull Event event) {
+		for (Listener listener : listeners) {
+			listener.onEvent(event);
+		}
+	}
 }
