@@ -1,0 +1,42 @@
+{
+  "_comment": "Importable Pterodactyl egg for VanillaVotifier.",
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "exported_at": "2026-11-11T00:00:00+00:00",
+  "name": "VanillaVotifier",
+  "author": "vanillavotifier@users.noreply.github.com",
+  "description": "Standalone Votifier server for vanilla Minecraft servers.",
+  "features": [],
+  "docker_images": {
+    "Java 8": "ghcr.io/ptero-eggs/yolks:java_8"
+  },
+  "file_denylist": [],
+  "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}",
+  "config": {
+    "files": "{\n  \"config.yaml\": {\n    \"parser\": \"yaml\",\n    \"find\": {\n      \"server.ip\": \"0.0.0.0\",\n      \"server.port\": \"{{server.build.default.port}}\"\n    }\n  }\n}",
+    "startup": "{\n  \"done\": \"VanillaVotifier server started.\"\n}",
+    "logs": "{}",
+    "stop": "stop"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\nset -euo pipefail\n\napt-get update\nDEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl\n\ncurl --fail --location --silent --show-error --output \"/mnt/server/${SERVER_JARFILE}\" -- \"https://github.com/Redraxed/VanillaVotifier/releases/latest/download/VanillaVotifier.jar\"\n\ncat > /mnt/server/config.yaml <<'EOF'\nconfig-version: 4\nlog-directory: logs\nserver:\n  ip: 0.0.0.0\n  port: 8192\nkey-pair-files:\n  public: public.pem\n  private: private.pem\non-vote: []\nEOF\nmkdir -p /mnt/server/logs\necho 'VanillaVotifier has been installed.'",
+      "container": "ghcr.io/ptero-eggs/installers:debian",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "Server JAR File",
+      "description": "Name of the downloaded VanillaVotifier JAR.",
+      "env_variable": "SERVER_JARFILE",
+      "default_value": "VanillaVotifier.jar",
+      "user_viewable": true,
+      "user_editable": false,
+      "rules": "required|regex:/^[\\w.-]+\\.jar$/",
+      "field_type": "text"
+    }
+  ]
+}

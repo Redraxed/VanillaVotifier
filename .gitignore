@@ -1,5 +1,7 @@
 /*
 !src/
+!pterodactyl/
+!.github/
 !.gitattributes
 !.gitignore
 !pom.xml
