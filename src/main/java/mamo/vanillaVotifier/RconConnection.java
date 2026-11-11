@@ -23,6 +23,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.io.Closeable;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
@@ -30,7 +31,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.SecureRandom;
 
-public class RconConnection {
+public class RconConnection implements Closeable {
 	private static final int SOCKET_TIMEOUT_MILLIS = 5000;
 	private static final int MIN_PACKET_LENGTH = 10;
 	private static final int MAX_PACKET_LENGTH = 1024 * 1024;
@@ -138,6 +139,14 @@ public class RconConnection {
 				throw new BrokenPipeException();
 			}
 			offset += count;
+		}
+	}
+
+	@Override
+	public synchronized void close() throws IOException {
+		if (socket != null) {
+			socket.close();
+			socket = null;
 		}
 	}
 }

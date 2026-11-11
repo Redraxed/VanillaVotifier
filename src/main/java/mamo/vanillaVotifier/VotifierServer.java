@@ -81,6 +81,7 @@ public class VotifierServer {
 						executorService.execute(new Runnable() {
 							@Override
 							public void run() {
+								try {
 								boolean handshakeCompleted = false;
 								try {
 									notifyListeners(new ConnectionEstablishedEvent(socket));
@@ -173,11 +174,13 @@ public class VotifierServer {
 								} catch (Exception e) {
 									notifyListeners(new CommunicationExceptionEvent(socket, e));
 								}
-								try {
-									socket.close();
-									notifyListeners(new ConnectionClosedEvent(socket));
-								} catch (Exception e) { // IOException: catching just in case. Continue even if socket doesn't close.
-									notifyListeners(new ConnectionCloseExceptionEvent(socket, e));
+								} finally {
+									try {
+										socket.close();
+										notifyListeners(new ConnectionClosedEvent(socket));
+									} catch (Exception e) { // IOException: catching just in case. Continue even if socket doesn't close.
+										notifyListeners(new ConnectionCloseExceptionEvent(socket, e));
+									}
 								}
 							}
 							});
