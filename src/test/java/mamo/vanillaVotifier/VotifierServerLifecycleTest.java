@@ -50,13 +50,18 @@ public class VotifierServerLifecycleTest {
 			stalledClient = connectAndReadGreeting(port);
 			secondClient = connectAndReadGreeting(port);
 			thirdClient = connectAndReadGreeting(port);
+			secondClient.close();
+			secondClient = null;
+			thirdClient.close();
+			thirdClient = null;
+			app.getServer().stop();
+			assertTrue("Server did not close a stalled client during shutdown", stopped.await(3, TimeUnit.SECONDS));
 		} finally {
 			if (stalledClient != null) stalledClient.close();
 			if (secondClient != null) secondClient.close();
 			if (thirdClient != null) thirdClient.close();
 			if (app.getServer().isRunning()) app.getServer().stop();
 		}
-		assertTrue("Server did not finish shutdown", stopped.await(3, TimeUnit.SECONDS));
 	}
 
 	private static Socket connectAndReadGreeting(int port) throws Exception {

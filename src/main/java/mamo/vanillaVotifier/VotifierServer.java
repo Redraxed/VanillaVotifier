@@ -50,6 +50,7 @@ public class VotifierServer {
 	private static final int MAX_QUEUED_CLIENTS = 128;
 	@NotNull protected VanillaVotifier votifier;
 	@NotNull protected CopyOnWriteArrayList<Listener> listeners;
+	@NotNull protected CopyOnWriteArrayList<Socket> clientSockets = new CopyOnWriteArrayList<Socket>();
 	protected boolean running;
 	@Nullable protected ServerSocket serverSocket;
 
@@ -77,6 +78,13 @@ public class VotifierServer {
 				while (isRunning()) {
 					try {
 						final Socket socket = serverSocket.accept();
+						synchronized (VotifierServer.this) {
+							if (!running) {
+								socket.close();
+								continue;
+							}
+							clientSockets.add(socket);
+						}
 						try {
 						executorService.execute(new Runnable() {
 							@Override
@@ -181,11 +189,13 @@ public class VotifierServer {
 									} catch (Exception e) { // IOException: catching just in case. Continue even if socket doesn't close.
 										notifyListeners(new ConnectionCloseExceptionEvent(socket, e));
 									}
+									clientSockets.remove(socket);
 								}
 							}
 							});
 						} catch (RejectedExecutionException e) {
 							socket.close();
+							clientSockets.remove(socket);
 						}
 					} catch (Exception e) {
 						if (running) { // Show errors only while running, to hide error while stopping.
@@ -225,6 +235,13 @@ public class VotifierServer {
 		notifyListeners(new ServerStoppingEvent());
 		running = false;
 		serverSocket.close();
+		for (Socket socket : clientSockets) {
+			try {
+				socket.close();
+			} catch (IOException e) {
+				notifyListeners(new ConnectionCloseExceptionEvent(socket, e));
+			}
+		}
 	}
 
 	public synchronized boolean isRunning() {
