@@ -62,13 +62,22 @@ public class YamlConfig extends AbstractConfig {
 	protected void loadFromConfigFile() throws IOException, InvalidKeySpecException {
 		if (!configFile.exists()) {
 			InputStream in = YamlConfig.class.getResourceAsStream("config.yaml");
-			copyDefaultConfig(in);
-			in.close();
+			if (in == null) {
+				throw new FileNotFoundException("Bundled default config.yaml is missing");
+			}
+			try (InputStream defaultConfig = in) {
+				copyDefaultConfig(defaultConfig);
+			}
 		}
 
-		BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(configFile), java.nio.charset.StandardCharsets.UTF_8));
-		Map config = (Map) new Yaml().load(reader);
-		reader.close();
+		Map config;
+		try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(configFile), java.nio.charset.StandardCharsets.UTF_8))) {
+			Object loaded = new Yaml().load(reader);
+			if (!(loaded instanceof Map)) {
+				throw new IOException("Configuration root must be a YAML mapping");
+			}
+			config = (Map) loaded;
+		}
 
 		boolean save = false;
 		if (!config.containsKey("config-version")) {
@@ -76,14 +85,14 @@ public class YamlConfig extends AbstractConfig {
 			save = true;
 		}
 		if (!config.containsKey("log-directory")) {
-			config.put("log-directory", 4);
+			config.put("log-directory", "logs");
 			save = true;
 		}
 		if (!config.containsKey("server")) {
 			config.put("server", new HashMap());
 			save = true;
 		}
-		Map serverSubconfig = (Map) config.get("server");
+		Map serverSubconfig = requireMap(config.get("server"), "server");
 		if (!serverSubconfig.containsKey("ip")) {
 			serverSubconfig.put("ip", "0.0.0.0");
 			save = true;
@@ -96,7 +105,7 @@ public class YamlConfig extends AbstractConfig {
 			config.put("key-pair-files", new HashMap());
 			save = true;
 		}
-		Map keyPairFilesSubconfig = (Map) config.get("key-pair-files");
+		Map keyPairFilesSubconfig = requireMap(config.get("key-pair-files"), "key-pair-files");
 		if (!keyPairFilesSubconfig.containsKey("public")) {
 			keyPairFilesSubconfig.put("public", "public.pem");
 			save = true;
@@ -109,17 +118,24 @@ public class YamlConfig extends AbstractConfig {
 			config.put("on-vote", new ArrayList<Map>());
 			save = true;
 		}
-		List onVoteSubconfig = (List) config.get("on-vote");
+		Object onVoteValue = config.get("on-vote");
+		if (!(onVoteValue instanceof List)) {
+			throw new IOException("Configuration key 'on-vote' must be a list");
+		}
+		List onVoteSubconfig = (List) onVoteValue;
 		for (int i = 0; i < onVoteSubconfig.size(); i++) {
-			Map voteActionSubconfig = (Map) onVoteSubconfig.get(i);
+			Map voteActionSubconfig = requireMap(onVoteSubconfig.get(i), "on-vote[" + i + "]");
+			String voteActionType = requireString(voteActionSubconfig.get("action"), "on-vote[" + i + "].action");
+			if (!voteActionType.equalsIgnoreCase("rcon") && !voteActionType.equalsIgnoreCase("shell")) {
+				throw new IOException("Unsupported action at on-vote[" + i + "]: " + voteActionType);
+			}
 			if (voteActionSubconfig.containsKey("action")) {
-				String voteActionType = (String) voteActionSubconfig.get("action");
 				if (voteActionType.equalsIgnoreCase("rcon")) {
 					if (!voteActionSubconfig.containsKey("server")) {
 						voteActionSubconfig.put("server", new HashMap());
 						save = true;
 					}
-					Map voteActionServerSubconfig = (Map) voteActionSubconfig.get("server");
+					Map voteActionServerSubconfig = requireMap(voteActionSubconfig.get("server"), "on-vote[" + i + "].server");
 					if (!voteActionServerSubconfig.containsKey("ip")) {
 						voteActionServerSubconfig.put("ip", "0.0.0.0");
 						save = true;
@@ -154,24 +170,24 @@ public class YamlConfig extends AbstractConfig {
 			}
 		}
 
-		configVersion = (Integer) config.get("config-version");
-		logDirectory = new File((String) config.get("log-directory"));
+		configVersion = requirePortLikeInteger(config.get("config-version"), "config-version", Integer.MIN_VALUE, Integer.MAX_VALUE);
+		logDirectory = new File(requireString(config.get("log-directory"), "log-directory"));
 		if (!logDirectory.exists()) {
 			logDirectory.mkdirs();
 		}
 		logFile = new File(logDirectory, TimestampUtils.getTimestamp() + ".log");
-		inetSocketAddress = new InetSocketAddress((String) serverSubconfig.get("ip"), (Integer) serverSubconfig.get("port"));
-		publicKeyFile = new File((String) keyPairFilesSubconfig.get("public"));
-		privateKeyFile = new File((String) keyPairFilesSubconfig.get("private"));
+		inetSocketAddress = new InetSocketAddress(requireString(serverSubconfig.get("ip"), "server.ip"), requirePortLikeInteger(serverSubconfig.get("port"), "server.port", 1, 65535));
+		publicKeyFile = new File(requireString(keyPairFilesSubconfig.get("public"), "key-pair-files.public"));
+		privateKeyFile = new File(requireString(keyPairFilesSubconfig.get("private"), "key-pair-files.private"));
 		loadKeyPair();
 		voteActions.clear();
 		for (int i = 0; i < onVoteSubconfig.size(); i++) {
-			Map voteActionSubconfig = (Map) onVoteSubconfig.get(i);
+			Map voteActionSubconfig = requireMap(onVoteSubconfig.get(i), "on-vote[" + i + "]");
 			if (((String) voteActionSubconfig.get("action")).equalsIgnoreCase("rcon")) {
-				Map voteActionServerSubconfig = (Map) voteActionSubconfig.get("server");
-				voteActions.add(new VoteAction(new RconCommandSender(new RconConnection(new InetSocketAddress((String) voteActionServerSubconfig.get("ip"), (Integer) voteActionServerSubconfig.get("port")), (String) voteActionServerSubconfig.get("password"))), (List) voteActionSubconfig.get("commands"), (HashMap) voteActionSubconfig.get("regex-replace")));
+				Map voteActionServerSubconfig = requireMap(voteActionSubconfig.get("server"), "on-vote[" + i + "].server");
+				voteActions.add(new VoteAction(new RconCommandSender(new RconConnection(new InetSocketAddress(requireString(voteActionServerSubconfig.get("ip"), "on-vote[" + i + "].server.ip"), requirePortLikeInteger(voteActionServerSubconfig.get("port"), "on-vote[" + i + "].server.port", 1, 65535)), requireString(voteActionServerSubconfig.get("password"), "on-vote[" + i + "].server.password"))), requireStringList(voteActionSubconfig.get("commands"), "on-vote[" + i + "].commands"), requireStringMap(voteActionSubconfig.get("regex-replace"), "on-vote[" + i + "].regex-replace")));
 			} else if (((String) voteActionSubconfig.get("action")).equalsIgnoreCase("shell")) {
-				voteActions.add(new VoteAction(new ShellCommandSender(), (List) voteActionSubconfig.get("commands"), (HashMap) voteActionSubconfig.get("regex-replace")));
+				voteActions.add(new VoteAction(new ShellCommandSender(), requireStringList(voteActionSubconfig.get("commands"), "on-vote[" + i + "].commands"), requireStringMap(voteActionSubconfig.get("regex-replace"), "on-vote[" + i + "].regex-replace")));
 			}
 		}
 
@@ -209,14 +225,66 @@ public class YamlConfig extends AbstractConfig {
 						put("action", "shell");
 					}
 					put("commands", voteAction.getCommands());
+					put("regex-replace", voteAction.getRegexReplacements());
 				}});
 			}
 		}});
 
-		BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(getConfigFile()), java.nio.charset.StandardCharsets.UTF_8));
-		new Yaml().dump(yamlConfig, out);
-		out.flush();
-		out.close();
+		try (BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(getConfigFile()), java.nio.charset.StandardCharsets.UTF_8))) {
+			new Yaml().dump(yamlConfig, out);
+		}
 		saveKeyPair();
+	}
+
+	private static Map requireMap(Object value, String key) throws IOException {
+		if (!(value instanceof Map)) {
+			throw new IOException("Configuration key '" + key + "' must be a mapping");
+		}
+		return (Map) value;
+	}
+
+	private static String requireString(Object value, String key) throws IOException {
+		if (!(value instanceof String) || ((String) value).trim().isEmpty()) {
+			throw new IOException("Configuration key '" + key + "' must be a non-empty string");
+		}
+		return (String) value;
+	}
+
+	private static int requirePortLikeInteger(Object value, String key, int minimum, int maximum) throws IOException {
+		if (!(value instanceof Number)) {
+			throw new IOException("Configuration key '" + key + "' must be an integer");
+		}
+		long number = ((Number) value).longValue();
+		if (number < minimum || number > maximum || ((Number) value).doubleValue() != number) {
+			throw new IOException("Configuration key '" + key + "' must be between " + minimum + " and " + maximum);
+		}
+		return (int) number;
+	}
+
+	private static List<String> requireStringList(Object value, String key) throws IOException {
+		if (!(value instanceof List)) {
+			throw new IOException("Configuration key '" + key + "' must be a list of strings");
+		}
+		List<String> result = new ArrayList<String>();
+		for (Object item : (List) value) {
+			if (!(item instanceof String)) {
+				throw new IOException("Configuration key '" + key + "' must contain only strings");
+			}
+			result.add((String) item);
+		}
+		return result;
+	}
+
+	private static HashMap<String, String> requireStringMap(Object value, String key) throws IOException {
+		Map map = requireMap(value, key);
+		HashMap<String, String> result = new HashMap<String, String>();
+		for (Object entryObject : map.entrySet()) {
+			Map.Entry entry = (Map.Entry) entryObject;
+			if (!(entry.getKey() instanceof String) || !(entry.getValue() instanceof String)) {
+				throw new IOException("Configuration key '" + key + "' must contain string keys and values");
+			}
+			result.put((String) entry.getKey(), (String) entry.getValue());
+		}
+		return result;
 	}
 }

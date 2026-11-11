@@ -39,17 +39,26 @@ public class JsonConfig extends AbstractConfig {
 	public synchronized void load() throws IOException, InvalidKeySpecException {
 		if (!configFile.exists()) {
 			InputStream in = YamlConfig.class.getResourceAsStream("config.json");
-			copyDefaultConfig(in);
-			in.close();
+			if (in == null) {
+				throw new FileNotFoundException("Bundled default config.json is missing");
+			}
+			try (InputStream defaultConfig = in) {
+				copyDefaultConfig(defaultConfig);
+			}
 		}
 
-		@SuppressWarnings("deprecation") BufferedInputStream defaultConfigIn = new BufferedInputStream(JsonConfig.class.getResourceAsStream("config.json"));
-		JSONObject defaultConfig = new JSONObject(new JSONTokener(defaultConfigIn));
-		defaultConfigIn.close();
+		JSONObject defaultConfig;
+		try (InputStream defaultConfigIn = JsonConfig.class.getResourceAsStream("config.json")) {
+			if (defaultConfigIn == null) {
+				throw new FileNotFoundException("Bundled default config.json is missing");
+			}
+			defaultConfig = new JSONObject(new JSONTokener(new InputStreamReader(defaultConfigIn, java.nio.charset.StandardCharsets.UTF_8)));
+		}
 
-		BufferedInputStream configIn = new BufferedInputStream(new FileInputStream(configFile));
-		JSONObject config = new JSONObject(new JSONTokener(configIn));
-		configIn.close();
+		JSONObject config;
+		try (InputStream configIn = new FileInputStream(configFile)) {
+			config = new JSONObject(new JSONTokener(new InputStreamReader(configIn, java.nio.charset.StandardCharsets.UTF_8)));
+		}
 
 		boolean save = JsonUtils.merge(defaultConfig, config);
 		configVersion = config.getInt("config-version");
@@ -117,10 +126,9 @@ public class JsonConfig extends AbstractConfig {
 			}
 		}});
 
-		BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(configFile), java.nio.charset.StandardCharsets.UTF_8));
-		out.write(JsonUtils.jsonToPrettyString(config));
-		out.flush();
-		out.close();
+		try (BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(configFile), java.nio.charset.StandardCharsets.UTF_8))) {
+			out.write(JsonUtils.jsonToPrettyString(config));
+		}
 		saveKeyPair();
 	}
 }
