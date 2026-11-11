@@ -22,7 +22,7 @@
   },
   "scripts": {
     "installation": {
-      "script": "#!/bin/bash\nset -euo pipefail\n\napt-get update\nDEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl\n\ncurl --fail --location --silent --show-error --output \"/mnt/server/${SERVER_JARFILE}\" -- \"https://github.com/Redraxed/VanillaVotifier/releases/latest/download/VanillaVotifier.jar\"\n\ncat > /mnt/server/config.yaml <<'EOF'\nconfig-version: 4\nlog-directory: logs\nserver:\n  ip: 0.0.0.0\n  port: 8192\nkey-pair-files:\n  public: public.pem\n  private: private.pem\non-vote: []\nEOF\nmkdir -p /mnt/server/logs\necho 'VanillaVotifier has been installed.'",
+      "script": "#!/bin/bash\nset -euo pipefail\n\napt-get update\nDEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl\n\ncurl --fail --location --silent --show-error --output \"/mnt/server/${SERVER_JARFILE}\" -- \"https://github.com/Redraxed/VanillaVotifier/releases/latest/download/VanillaVotifier.jar\"\necho 'VanillaVotifier has been installed.'",
       "container": "ghcr.io/ptero-eggs/installers:debian",
       "entrypoint": "bash"
     }
