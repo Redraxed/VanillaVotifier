@@ -202,7 +202,7 @@ public class YamlConfig extends AbstractConfig {
 		yamlConfig.put("config-version", getConfigVersion());
 		yamlConfig.put("log-directory", getLogDirectory().getPath());
 		yamlConfig.put("server", new HashMap() {{
-			put("ip", getInetSocketAddress().getAddress().getHostName());
+			put("ip", getInetSocketAddress().getHostString());
 			put("port", getInetSocketAddress().getPort());
 		}});
 		yamlConfig.put("key-pair-files", new HashMap() {{
@@ -216,7 +216,7 @@ public class YamlConfig extends AbstractConfig {
 						final RconCommandSender commandSender = (RconCommandSender) voteAction.getCommandSender();
 						put("action", "rcon");
 						put("server", new HashMap() {{
-							put("ip", commandSender.getRconConnection().getInetSocketAddress().getAddress().getHostName());
+							put("ip", commandSender.getRconConnection().getInetSocketAddress().getHostString());
 							put("port", commandSender.getRconConnection().getInetSocketAddress().getPort());
 							put("password", commandSender.getRconConnection().getPassword());
 						}});

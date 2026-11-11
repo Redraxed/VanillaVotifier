@@ -108,7 +108,7 @@ public class JsonConfig extends AbstractConfig {
 		JSONObject config = new JSONObject();
 		config.put("config-version", getConfigVersion());
 		config.put("log-file", getLogFile().getPath());
-		config.put("ip", getInetSocketAddress().getAddress().getHostName());
+		config.put("ip", getInetSocketAddress().getHostString());
 		config.put("port", getInetSocketAddress().getPort());
 		config.put("key-pair-files", new JSONObject() {{
 			put("public", getPublicKeyFile().getPath());
@@ -118,7 +118,7 @@ public class JsonConfig extends AbstractConfig {
 			for (final VoteAction voteAction : getVoteActions()) {
 				final RconCommandSender commandSender = (RconCommandSender) voteAction.getCommandSender();
 				put(new JSONObject() {{
-					put("ip", commandSender.getRconConnection().getInetSocketAddress().getAddress().getHostName());
+					put("ip", commandSender.getRconConnection().getInetSocketAddress().getHostString());
 					put("port", commandSender.getRconConnection().getInetSocketAddress().getPort());
 					put("password", commandSender.getRconConnection().getPassword());
 					put("commands", voteAction.getCommands());
