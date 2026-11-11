@@ -15,7 +15,7 @@
   "file_denylist": [],
   "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}",
   "config": {
-    "files": "{\n  \"config.yaml\": {\n    \"parser\": \"yaml\",\n    \"find\": {\n      \"server.ip\": \"0.0.0.0\",\n      \"server.port\": \"{{server.build.default.port}}\"\n    }\n  }\n}",
+    "files": "{}",
     "startup": "{\n  \"done\": \"VanillaVotifier server started.\"\n}",
     "logs": "{}",
     "stop": "stop"
