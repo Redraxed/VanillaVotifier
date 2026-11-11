@@ -66,7 +66,7 @@ public class YamlConfig extends AbstractConfig {
 			in.close();
 		}
 
-		BufferedReader reader = new BufferedReader(new FileReader(configFile));
+		BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(configFile), java.nio.charset.StandardCharsets.UTF_8));
 		Map config = (Map) new Yaml().load(reader);
 		reader.close();
 
@@ -213,7 +213,7 @@ public class YamlConfig extends AbstractConfig {
 			}
 		}});
 
-		BufferedWriter out = new BufferedWriter(new FileWriter(getConfigFile()));
+		BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(getConfigFile()), java.nio.charset.StandardCharsets.UTF_8));
 		new Yaml().dump(yamlConfig, out);
 		out.flush();
 		out.close();

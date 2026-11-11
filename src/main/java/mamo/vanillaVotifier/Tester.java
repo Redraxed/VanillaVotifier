@@ -61,7 +61,7 @@ public class Tester {
 			while (socket.getInputStream().read() != '\n') {
 				// Ignore the Votifier implementation version
 			}
-			socket.getOutputStream().write(cipher.doFinal(message.getBytes()));
+			socket.getOutputStream().write(cipher.doFinal(message.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
 			socket.getOutputStream().flush();
 			socket.close();
 		}

@@ -95,7 +95,7 @@ public class Logger {
 	private void initWriterIfVotifierIsLoaded() {
 		if (logWriter == null && votifier.getConfig().getLogFile() != null) {
 			try {
-				logWriter = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(votifier.getConfig().getLogFile())));
+				logWriter = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(votifier.getConfig().getLogFile()), java.nio.charset.StandardCharsets.UTF_8));
 			} catch (Exception e) {
 				// FileNotFoundException, UnsupportedEncodingException: ignoring.
 			}

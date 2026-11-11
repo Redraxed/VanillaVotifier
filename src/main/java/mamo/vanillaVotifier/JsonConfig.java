@@ -117,7 +117,7 @@ public class JsonConfig extends AbstractConfig {
 			}
 		}});
 
-		BufferedWriter out = new BufferedWriter(new FileWriter(configFile));
+		BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(configFile), java.nio.charset.StandardCharsets.UTF_8));
 		out.write(JsonUtils.jsonToPrettyString(config));
 		out.flush();
 		out.close();

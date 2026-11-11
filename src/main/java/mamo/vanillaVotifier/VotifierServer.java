@@ -88,7 +88,7 @@ public class VotifierServer {
 									
 									// 1. Send greeting
 									try {
-										BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
+										BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8));
 										writer.write("VOTIFIER 1\n");
 										writer.flush();
 										handshakeCompleted = true;
