@@ -96,6 +96,6 @@ public class RsaUtils {
 
 	@NotNull
 	public static String keyToString(Key key) {
-		return new String(Base64.encode(key.getEncoded()));
+		return new String(Base64.encode(key.getEncoded()), java.nio.charset.StandardCharsets.US_ASCII);
 	}
 }

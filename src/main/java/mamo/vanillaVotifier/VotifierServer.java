@@ -31,7 +31,6 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.SocketOptions;
 import java.net.SocketTimeoutException;
 import java.security.interfaces.RSAPublicKey;
 import java.util.AbstractMap.SimpleEntry;
@@ -39,13 +38,19 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.PatternSyntaxException;
 
 public class VotifierServer {
+	private static final int CLIENT_TIMEOUT_MILLIS = 5000;
+	private static final int MAX_CLIENT_WORKERS = 4;
+	private static final int MAX_QUEUED_CLIENTS = 128;
 	@NotNull protected VanillaVotifier votifier;
 	@NotNull protected CopyOnWriteArrayList<Listener> listeners;
+	@NotNull protected CopyOnWriteArrayList<Socket> clientSockets = new CopyOnWriteArrayList<Socket>();
 	protected boolean running;
 	@Nullable protected ServerSocket serverSocket;
 
@@ -67,21 +72,32 @@ public class VotifierServer {
 		new Thread(new Runnable() {
 			@Override
 			public void run() {
-				ExecutorService executorService = Executors.newSingleThreadExecutor();
+				ExecutorService executorService = new ThreadPoolExecutor(
+						MAX_CLIENT_WORKERS, MAX_CLIENT_WORKERS, 0L, TimeUnit.MILLISECONDS,
+						new ArrayBlockingQueue<Runnable>(MAX_QUEUED_CLIENTS));
 				while (isRunning()) {
 					try {
 						final Socket socket = serverSocket.accept();
+						synchronized (VotifierServer.this) {
+							if (!running) {
+								socket.close();
+								continue;
+							}
+							clientSockets.add(socket);
+						}
+						try {
 						executorService.execute(new Runnable() {
 							@Override
 							public void run() {
+								try {
 								boolean handshakeCompleted = false;
 								try {
 									notifyListeners(new ConnectionEstablishedEvent(socket));
-									socket.setSoTimeout(SocketOptions.SO_TIMEOUT);
+									socket.setSoTimeout(CLIENT_TIMEOUT_MILLIS);
 									
 									// 1. Send greeting
 									try {
-										BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
+										BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8));
 										writer.write("VOTIFIER 1\n");
 										writer.flush();
 										handshakeCompleted = true;
@@ -95,14 +111,11 @@ public class VotifierServer {
 										try {
 											BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
 											byte[] request = new byte[((RSAPublicKey) votifier.getConfig().getKeyPair().getPublic()).getModulus().bitLength() / Byte.SIZE];
-											int bytesRead = in.read(request);
-											if (bytesRead == -1) {
-												return; // Client closed connection cleanly
-											}
+											readFully(in, request);
 											
 											notifyListeners(new EncryptedInputReceivedEvent(socket, new String(request)));
 											request = RsaUtils.getDecryptCipher(votifier.getConfig().getKeyPair().getPrivate()).doFinal(request);
-											String requestString = new String(request);
+											String requestString = new String(request, java.nio.charset.StandardCharsets.UTF_8);
 											notifyListeners(new DecryptedInputReceivedEvent(socket, requestString));
 											String[] requestArray = requestString.split("\n");
 											
@@ -169,14 +182,21 @@ public class VotifierServer {
 								} catch (Exception e) {
 									notifyListeners(new CommunicationExceptionEvent(socket, e));
 								}
-								try {
-									socket.close();
-									notifyListeners(new ConnectionClosedEvent(socket));
-								} catch (Exception e) { // IOException: catching just in case. Continue even if socket doesn't close.
-									notifyListeners(new ConnectionCloseExceptionEvent(socket, e));
+								} finally {
+									try {
+										socket.close();
+										notifyListeners(new ConnectionClosedEvent(socket));
+									} catch (Exception e) { // IOException: catching just in case. Continue even if socket doesn't close.
+										notifyListeners(new ConnectionCloseExceptionEvent(socket, e));
+									}
+									clientSockets.remove(socket);
 								}
 							}
-						});
+							});
+						} catch (RejectedExecutionException e) {
+							socket.close();
+							clientSockets.remove(socket);
+						}
 					} catch (Exception e) {
 						if (running) { // Show errors only while running, to hide error while stopping.
 							notifyListeners(new ConnectionEstablishExceptionEvent(e));
@@ -197,6 +217,17 @@ public class VotifierServer {
 		}).start();
 	}
 
+	private static void readFully(BufferedInputStream in, byte[] buffer) throws IOException {
+		int offset = 0;
+		while (offset < buffer.length) {
+			int count = in.read(buffer, offset, buffer.length - offset);
+			if (count < 0) {
+				throw new IOException("Client closed before sending a complete vote packet");
+			}
+			offset += count;
+		}
+	}
+
 	public synchronized void stop() throws IOException {
 		if (!isRunning()) {
 			throw new IllegalStateException("Server isn't running!");
@@ -204,6 +235,13 @@ public class VotifierServer {
 		notifyListeners(new ServerStoppingEvent());
 		running = false;
 		serverSocket.close();
+		for (Socket socket : clientSockets) {
+			try {
+				socket.close();
+			} catch (IOException e) {
+				notifyListeners(new ConnectionCloseExceptionEvent(socket, e));
+			}
+		}
 	}
 
 	public synchronized boolean isRunning() {

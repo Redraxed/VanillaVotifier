@@ -39,17 +39,26 @@ public class JsonConfig extends AbstractConfig {
 	public synchronized void load() throws IOException, InvalidKeySpecException {
 		if (!configFile.exists()) {
 			InputStream in = YamlConfig.class.getResourceAsStream("config.json");
-			copyDefaultConfig(in);
-			in.close();
+			if (in == null) {
+				throw new FileNotFoundException("Bundled default config.json is missing");
+			}
+			try (InputStream defaultConfig = in) {
+				copyDefaultConfig(defaultConfig);
+			}
 		}
 
-		@SuppressWarnings("deprecation") BufferedInputStream defaultConfigIn = new BufferedInputStream(JsonConfig.class.getResourceAsStream("config.json"));
-		JSONObject defaultConfig = new JSONObject(new JSONTokener(defaultConfigIn));
-		defaultConfigIn.close();
+		JSONObject defaultConfig;
+		try (InputStream defaultConfigIn = JsonConfig.class.getResourceAsStream("config.json")) {
+			if (defaultConfigIn == null) {
+				throw new FileNotFoundException("Bundled default config.json is missing");
+			}
+			defaultConfig = new JSONObject(new JSONTokener(new InputStreamReader(defaultConfigIn, java.nio.charset.StandardCharsets.UTF_8)));
+		}
 
-		BufferedInputStream configIn = new BufferedInputStream(new FileInputStream(configFile));
-		JSONObject config = new JSONObject(new JSONTokener(configIn));
-		configIn.close();
+		JSONObject config;
+		try (InputStream configIn = new FileInputStream(configFile)) {
+			config = new JSONObject(new JSONTokener(new InputStreamReader(configIn, java.nio.charset.StandardCharsets.UTF_8)));
+		}
 
 		boolean save = JsonUtils.merge(defaultConfig, config);
 		configVersion = config.getInt("config-version");
@@ -99,7 +108,7 @@ public class JsonConfig extends AbstractConfig {
 		JSONObject config = new JSONObject();
 		config.put("config-version", getConfigVersion());
 		config.put("log-file", getLogFile().getPath());
-		config.put("ip", getInetSocketAddress().getAddress().getHostName());
+		config.put("ip", getInetSocketAddress().getHostString());
 		config.put("port", getInetSocketAddress().getPort());
 		config.put("key-pair-files", new JSONObject() {{
 			put("public", getPublicKeyFile().getPath());
@@ -109,7 +118,7 @@ public class JsonConfig extends AbstractConfig {
 			for (final VoteAction voteAction : getVoteActions()) {
 				final RconCommandSender commandSender = (RconCommandSender) voteAction.getCommandSender();
 				put(new JSONObject() {{
-					put("ip", commandSender.getRconConnection().getInetSocketAddress().getAddress().getHostName());
+					put("ip", commandSender.getRconConnection().getInetSocketAddress().getHostString());
 					put("port", commandSender.getRconConnection().getInetSocketAddress().getPort());
 					put("password", commandSender.getRconConnection().getPassword());
 					put("commands", voteAction.getCommands());
@@ -117,10 +126,9 @@ public class JsonConfig extends AbstractConfig {
 			}
 		}});
 
-		BufferedWriter out = new BufferedWriter(new FileWriter(configFile));
-		out.write(JsonUtils.jsonToPrettyString(config));
-		out.flush();
-		out.close();
+		try (BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(configFile), java.nio.charset.StandardCharsets.UTF_8))) {
+			out.write(JsonUtils.jsonToPrettyString(config));
+		}
 		saveKeyPair();
 	}
 }

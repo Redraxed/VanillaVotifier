@@ -23,15 +23,18 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.io.Closeable;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
-import java.net.SocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.SecureRandom;
 
-public class RconConnection {
+public class RconConnection implements Closeable {
+	private static final int SOCKET_TIMEOUT_MILLIS = 5000;
+	private static final int MIN_PACKET_LENGTH = 10;
+	private static final int MAX_PACKET_LENGTH = 1024 * 1024;
 	@NotNull protected InetSocketAddress inetSocketAddress;
 	@NotNull protected String password;
 	protected int requestId;
@@ -81,7 +84,7 @@ public class RconConnection {
 	public synchronized VotifierPacket sendRequest(@NotNull VotifierPacket request) throws IOException, InvalidRconPasswordException {
 		if (socket == null) {
 			socket = new Socket(inetSocketAddress.getAddress(), inetSocketAddress.getPort());
-			socket.setSoTimeout(SocketOptions.SO_TIMEOUT);
+			socket.setSoTimeout(SOCKET_TIMEOUT_MILLIS);
 		}
 		byte[] requestBytes = new byte[request.getLength() + Integer.SIZE / 8];
 		ByteBuffer requestBuffer = ByteBuffer.wrap(requestBytes);
@@ -89,7 +92,7 @@ public class RconConnection {
 		requestBuffer.putInt(request.getLength());
 		requestBuffer.putInt(getRequestId());
 		requestBuffer.putInt(request.getType().toInt());
-		requestBuffer.put(request.getPayload().getBytes());
+			requestBuffer.put(request.getPayload().getBytes(java.nio.charset.StandardCharsets.UTF_8));
 		requestBuffer.put((byte) 0);
 		requestBuffer.put((byte) 0);
 		try {
@@ -103,16 +106,15 @@ public class RconConnection {
 			}
 		}
 		byte[] responseBytes = new byte[Integer.SIZE / 8];
-		if (socket.getInputStream().read(responseBytes) == -1) {
-			throw new BrokenPipeException();
-		}
+		readFully(socket.getInputStream(), responseBytes);
 		ByteBuffer responseBuffer = ByteBuffer.wrap(responseBytes);
 		responseBuffer.order(ByteOrder.LITTLE_ENDIAN);
 		int responseLength = responseBuffer.getInt();
-		responseBytes = new byte[responseLength];
-		if (socket.getInputStream().read(responseBytes) == -1) {
-			throw new BrokenPipeException();
+		if (responseLength < MIN_PACKET_LENGTH || responseLength > MAX_PACKET_LENGTH) {
+			throw new IOException("Invalid RCON response length: " + responseLength);
 		}
+		responseBytes = new byte[responseLength];
+		readFully(socket.getInputStream(), responseBytes);
 		responseBuffer = ByteBuffer.wrap(responseBytes);
 		responseBuffer.order(ByteOrder.LITTLE_ENDIAN);
 		int responseRequestId = responseBuffer.getInt();
@@ -126,6 +128,25 @@ public class RconConnection {
 				throw new InvalidRconPasswordException();
 			}
 		}
-		return new VotifierPacket(responseLength, responseRequestId, responseType, new String(responsePayload));
+		return new VotifierPacket(responseLength, responseRequestId, responseType, new String(responsePayload, java.nio.charset.StandardCharsets.UTF_8));
+	}
+
+	private static void readFully(java.io.InputStream input, byte[] buffer) throws IOException {
+		int offset = 0;
+		while (offset < buffer.length) {
+			int count = input.read(buffer, offset, buffer.length - offset);
+			if (count < 0) {
+				throw new BrokenPipeException();
+			}
+			offset += count;
+		}
+	}
+
+	@Override
+	public synchronized void close() throws IOException {
+		if (socket != null) {
+			socket.close();
+			socket = null;
+		}
 	}
 }

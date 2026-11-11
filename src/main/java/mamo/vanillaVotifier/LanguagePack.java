@@ -52,7 +52,7 @@ public class LanguagePack {
 			if (!resource.startsWith("/")) {
 				resource = "/" + languagePackPath + "/" + resource;
 			}
-			BufferedReader in = new BufferedReader(new InputStreamReader(LanguagePack.class.getResourceAsStream(resource)));
+			BufferedReader in = new BufferedReader(new InputStreamReader(LanguagePack.class.getResourceAsStream(resource), java.nio.charset.StandardCharsets.UTF_8));
 			StringBuilder stringBuilder = new StringBuilder();
 			int i;
 			try {

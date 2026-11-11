@@ -143,19 +143,18 @@ public abstract class AbstractConfig implements Config {
 	}
 
 	protected void copyDefaultConfig(InputStream in) throws IOException {
-		BufferedReader reader = new BufferedReader(new InputStreamReader(in));
 		StringBuilder stringBuilder = new StringBuilder();
-		int i;
-		while ((i = reader.read()) != -1) {
-			stringBuilder.append((char) i);
+		try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8))) {
+			int i;
+			while ((i = reader.read()) != -1) {
+				stringBuilder.append((char) i);
+			}
 		}
-		reader.close();
-		BufferedWriter writer = new BufferedWriter(new FileWriter(configFile));
-		for (char c : stringBuilder.toString().replaceAll("\\u000D\\u000A|[\\u000A\\u000B\\u000C\\u000D\\u0085\\u2028\\u2029]", System.getProperty("line.separator")).toCharArray()) {
-			writer.write((int) c);
+		try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(configFile), java.nio.charset.StandardCharsets.UTF_8))) {
+			for (char c : stringBuilder.toString().replaceAll("\\u000D\\u000A|[\\u000A\\u000B\\u000C\\u000D\\u0085\\u2028\\u2029]", System.getProperty("line.separator")).toCharArray()) {
+				writer.write(c);
+			}
 		}
-		writer.flush();
-		writer.close();
 	}
 
 	protected void loadKeyPair() throws IOException, InvalidKeySpecException {
@@ -169,30 +168,27 @@ public abstract class AbstractConfig implements Config {
 		if (!privateKeyFile.exists()) {
 			throw new PrivateKeyFileNotFoundException();
 		}
-		PemReader publicKeyPemReader = new PemReader(new BufferedReader(new FileReader(publicKeyFile)));
-		PemReader privateKeyPemReader = new PemReader(new BufferedReader(new FileReader(privateKeyFile)));
-		PemObject publicPemObject = publicKeyPemReader.readPemObject();
-		if (publicPemObject == null) {
-			throw new InvalidPublicKeyFileException();
+		try (PemReader publicKeyPemReader = new PemReader(new InputStreamReader(new FileInputStream(publicKeyFile), java.nio.charset.StandardCharsets.US_ASCII));
+			 PemReader privateKeyPemReader = new PemReader(new InputStreamReader(new FileInputStream(privateKeyFile), java.nio.charset.StandardCharsets.US_ASCII))) {
+			PemObject publicPemObject = publicKeyPemReader.readPemObject();
+			if (publicPemObject == null) {
+				throw new InvalidPublicKeyFileException();
+			}
+			PemObject privatePemObject = privateKeyPemReader.readPemObject();
+			if (privatePemObject == null) {
+				throw new InvalidPrivateKeyFileException();
+			}
+			keyPair = new KeyPair(RsaUtils.bytesToPublicKey(publicPemObject.getContent()), RsaUtils.bytesToPrivateKey(privatePemObject.getContent()));
 		}
-		PemObject privatePemObject = privateKeyPemReader.readPemObject();
-		if (privatePemObject == null) {
-			throw new InvalidPrivateKeyFileException();
-		}
-		keyPair = new KeyPair(RsaUtils.bytesToPublicKey(publicPemObject.getContent()), RsaUtils.bytesToPrivateKey(privatePemObject.getContent()));
-		publicKeyPemReader.close();
-		privateKeyPemReader.close();
 	}
 
 	@Override
 	public synchronized void saveKeyPair() throws IOException {
-		PemWriter publicPemWriter = new PemWriter(new BufferedWriter(new FileWriter(getPublicKeyFile())));
-		publicPemWriter.writeObject(new PemObject("PUBLIC KEY", getKeyPair().getPublic().getEncoded()));
-		publicPemWriter.flush();
-		publicPemWriter.close();
-		PemWriter privatePemWriter = new PemWriter(new BufferedWriter(new FileWriter(getPrivateKeyFile())));
-		privatePemWriter.writeObject(new PemObject("RSA PRIVATE KEY", getKeyPair().getPrivate().getEncoded()));
-		privatePemWriter.flush();
-		privatePemWriter.close();
+		try (PemWriter publicPemWriter = new PemWriter(new OutputStreamWriter(new FileOutputStream(getPublicKeyFile()), java.nio.charset.StandardCharsets.US_ASCII))) {
+			publicPemWriter.writeObject(new PemObject("PUBLIC KEY", getKeyPair().getPublic().getEncoded()));
+		}
+		try (PemWriter privatePemWriter = new PemWriter(new OutputStreamWriter(new FileOutputStream(getPrivateKeyFile()), java.nio.charset.StandardCharsets.US_ASCII))) {
+			privatePemWriter.writeObject(new PemObject("RSA PRIVATE KEY", getKeyPair().getPrivate().getEncoded()));
+		}
 	}
 }

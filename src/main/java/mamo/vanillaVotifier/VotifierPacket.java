@@ -26,7 +26,7 @@ public class VotifierPacket {
 	@NotNull protected String payload;
 
 	public VotifierPacket(int requestId, @NotNull Type type, @NotNull String payload) {
-		this(Integer.SIZE / 8 + Integer.SIZE / 8 + payload.length() + Byte.SIZE / 8 * 2, requestId, type, payload);
+		this(Integer.SIZE / 8 + Integer.SIZE / 8 + payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length + Byte.SIZE / 8 * 2, requestId, type, payload);
 	}
 
 	public VotifierPacket(int length, int requestId, @NotNull Type type, @NotNull String payload) {
